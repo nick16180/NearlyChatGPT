@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "nearlychatgpt-main"
+version = "0.1.0"
+description = ""
+authors = ["nickolasalvarado <nickolasalvarado@gmail.com>"]
+readme = "README.md"
+packages = [{include = "nearlychatgpt_main"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+streamlit = "^1.26.0"
+streamlit-chat = "^0.1.1"
+
+[tool.poetry.group.dev.dependencies]
+openai = "^0.27.9"
+langchain = "^0.0.272"
+python-dotenv = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
