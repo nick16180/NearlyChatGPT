@@ -13,7 +13,7 @@ To use the code, download the repo, unzip, and do the following:
 
 - copy example.env to a new .env file with your settings
 
-Run the folling
+Run the following in a terminal:
 
 - pip install poetry
 - poetry install
