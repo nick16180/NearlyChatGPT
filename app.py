@@ -5,15 +5,16 @@ import os
 import openai
 import datetime
 import json
-
 import logging
 
-logging.basicConfig(level=logging.WARNING)
+# adjust as needed
+logging.basicConfig(level=logging.INFO)
 
 # Load environment variables
 ENV = dotenv.dotenv_values(".env")
 
 # Set up the Open AI Client
+openai.api_type = ENV["API_TYPE"]
 if ENV["API_TYPE"] == "azure":
     openai.api_base = ENV["AZURE_OPENAI_ENDPOINT"]
     openai.api_version = ENV["AZURE_OPENAI_API_VERSION"]
@@ -21,10 +22,10 @@ if ENV["API_TYPE"] == "azure":
 else:
     openai.api_key = ENV["OPENAI_API_KEY"]
 
-
+# generates responses to prompts
 def generate_response(prompt, temperature, topp):
     st.session_state["messages"].append({"role": "user", "content": prompt})
-    response = None
+    completion, response = None, None
     try:
         if ENV["API_TYPE"] == "azure":
             completion = openai.ChatCompletion.create(
@@ -37,37 +38,11 @@ def generate_response(prompt, temperature, topp):
             completion = openai.ChatCompletion.create(
                 model=ENV["OPENAI_MODEL"],
                 messages=st.session_state["messages"],
+                temperature=temperature,
+                top_p=topp,
             )
         response = completion.choices[0].message.content
-    except openai.error.APIError as e:
-        st.write(response)
-        response = f"The API could not handle this content: {str(e)}"
-    st.session_state["messages"].append({"role": "assistant", "content": response})
-
-    return (
-        response,
-        completion.usage.total_tokens,
-        completion.usage.prompt_tokens,
-        completion.usage.completion_tokens,
-    )
-
-
-def generate_initial_response(prompt):
-    st.session_state["messages"].append({"role": "system", "content": prompt})
-    response = None
-    try:
-        if ENV["API_TYPE"] == "azure":
-            completion = openai.ChatCompletion.create(
-                engine=ENV["AZURE_OPENAI_CHATGPT_DEPLOYMENT"],
-                messages=st.session_state["messages"],
-            )
-        else:
-            completion = openai.ChatCompletion.create(
-                model=ENV["OPENAI_MODEL"],
-                messages=st.session_state["messages"],
-            )
-        response = completion.choices[0].message.content
-    except openai.error.APIError as e:
+    except Exception as e:
         st.write(response)
         response = f"The API could not handle this content: {str(e)}"
     st.session_state["messages"].append({"role": "assistant", "content": response})
@@ -110,6 +85,10 @@ if "completion_tokens" not in st.session_state:
     st.session_state["completion_tokens"] = []
 if "total_cost" not in st.session_state:
     st.session_state["total_cost"] = 0.0
+if "prompt_cost" not in st.session_state:
+    st.session_state["prompt_cost"] = 0.0
+if "completion_cost" not in st.session_state:
+    st.session_state["completion_cost"] = 0.0
 if "temperature" not in st.session_state:
     st.session_state["temperature"] = 1.0
 if "topp" not in st.session_state:
@@ -117,8 +96,14 @@ if "topp" not in st.session_state:
 
 # SIDEBAR SETUP
 st.sidebar.write("Total cost of this conversation")
-counter_placeholder = st.sidebar.empty()
-counter_placeholder.code(f"${st.session_state['total_cost']:.5f}")
+total_cost_placeholder = st.sidebar.empty()
+total_cost_placeholder.code(f"${st.session_state['total_cost']:.5f}")
+st.sidebar.write("Total cost of prompts")
+prompt_cost_placeholder = st.sidebar.empty()
+prompt_cost_placeholder.code(f"${st.session_state['prompt_cost']:.5f}")
+st.sidebar.write("Total cost of completions")
+completion_cost_placeholder = st.sidebar.empty()
+completion_cost_placeholder.code(f"${st.session_state['completion_cost']:.5f}")
 temperature = st.sidebar.slider(
     "Temperature", 0.0, 1.0, st.session_state["temperature"]
 )
@@ -136,7 +121,10 @@ if clear_button:
     st.session_state["total_tokens"] = []
     st.session_state["prompt_tokens"] = []
     st.session_state["completion_tokens"] = []
-    counter_placeholder.code(f"${st.session_state['total_cost']:.5f}")
+    total_cost_placeholder.code(f"${st.session_state['total_cost']:.5f}")
+    prompt_cost_placeholder.code(f"${st.session_state['prompt_cost']:.5f}")
+    completion_cost_placeholder.code(f"${st.session_state['completion_cost']:.5f}")
+    
 
 download_conversation_button = st.sidebar.download_button(
     "Download Conversation",
@@ -173,15 +161,13 @@ with container:
             st.session_state["prompt_tokens"].append(prompt_tokens)
             st.session_state["completion_tokens"].append(completion_tokens)
 
-            if ENV["API_TYPE"] == "azure":
-                # from https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/#pricing
-                cost = prompt_tokens * 0.0015 / 1000 + completion_tokens * 0.002 / 1000
-            else:
-                # https://openai.com/pricing
-                cost = prompt_tokens * 0.0015 / 1000 + completion_tokens * 0.002 / 1000
+            cost = prompt_tokens * float(ENV["COST_PROMPT"]) / 1000 + completion_tokens * float(ENV["COST_COMPLETION"]) / 1000
 
             st.session_state["cost"].append(cost)
             st.session_state["total_cost"] += cost
+            
+            st.session_state["prompt_cost"] += prompt_tokens * float(ENV["COST_PROMPT"]) / 1000
+            st.session_state["completion_cost"] += completion_tokens * float(ENV["COST_COMPLETION"]) / 1000
 
 if st.session_state["generated"]:
     with response_container:
@@ -192,4 +178,6 @@ if st.session_state["generated"]:
                 key=str(i) + "_user",
             )
             message(st.session_state["generated"][i], key=str(i))
-        counter_placeholder.code(f"${st.session_state['total_cost']:.5f}")
+        total_cost_placeholder.code(f"${st.session_state['total_cost']:.5f}")
+        prompt_cost_placeholder.code(f"${st.session_state['prompt_cost']:.5f}")
+        completion_cost_placeholder.code(f"${st.session_state['completion_cost']:.5f}")
